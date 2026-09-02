@@ -39,17 +39,25 @@ Para garantir a visibilidade necessaria sobre as tentativas de conexao e autenti
 
 ## 5. Linha do Tempo e Execucao do Ataque
 
-A partir do host atacante (`192.168.207.130`), foi executada uma rotina de forca bruta direcionada a conta `analista` utilizando uma lista customizada de senhas via protocolo SSH.
+### A. Reconhecimento e Primeiras Tentativas de Conexao
+A partir do host atacante (`192.168.207.130`), foram realizadas conexoes iniciais que encerraram antes da conclusao da negociacao de autenticacao (`preauth`).
 
-![Execucao da ferramenta Hydra no Kali](img/02-hydra-execution.png)
+![Registro inicial de conexoes e encerramento em preauth](img/02-primeiras-falhas.png)
 
-Apos o disparo do ataque, o arquivo `/var/log/auth.log` registrou o seguinte comportamento sequencial:
+### B. Enumeracao de Usuarios Inexistentes
+Em seguida, foram submetidas credenciais arbitrarias. O subsistema PAM e o servico OpenSSH registraram a tentativa com conta inexistente no sistema operacional (`Invalid user hacker_malicioso`).
+
+![Log de usuario invalido capturado no auth.log](img/03-invalid-user.png)
+
+### C. Ataque de Forca Bruta e Comprometimento da Conta
+O atacante direcionou o ataque contra a conta valida `analista`. Apos o disparo, o arquivo `/var/log/auth.log` registrou o seguinte comportamento sequencial:
+
 * **20:36:44 a 20:36:58:** Registro de falhas consecutivas de senha (`Failed password for analista`).
 * **20:36:58:** O servico OpenSSH atingiu o limite maximo de tentativas por conexao e finalizou a sessao inicial (`error: maximum authentication attempts exceeded`).
 * **20:36:59:** A ferramenta reabriu conexao imediata em uma nova porta efemera (`59028`) para prosseguir com os testes de credencial.
 * **20:37:01:** **Comprometimento:** O atacante submeteu a credencial correta. O sistema registrou `Accepted password`, abriu uma sessao PAM e alocou um terminal TTY via `systemd-logind`.
 
-![Evidencia da forca bruta e autenticacao bem-sucedida](img/03-auth-log-compromise.png)
+![Sequencia de falhas de forca bruta seguida de login bem-sucedido](img/04-forca-bruta-sucesso.png)
 
 ---
 
@@ -60,13 +68,3 @@ No processo de resposta a incidentes, foram executados filtros em linha de coman
 1. **Total de falhas de autenticacao detectadas:**
    ```bash
    sudo grep "Failed password" /var/log/auth.log | wc -l
-
-1. Agrupamento e contagem de tentativas por IP de origem:
-   sudo grep "Failed password" /var/log/auth.log | awk '{print $(NF-3)}' | sort | uniq -c
-2. Identificacao de sessoes bem-sucedidas posteriores as falhas:
-   sudo grep "Accepted password" /var/log/auth.log
-
-7. Contencao e Remediacao
-   1. Contencao Imediata:
-    Aplicacao de regra de descarte no firewall local (iptables) para impedir novas sessoes originadas pelo IP atacante:
-    sudo iptables -A INPUT -s 192.168.207.130 -j DROP
